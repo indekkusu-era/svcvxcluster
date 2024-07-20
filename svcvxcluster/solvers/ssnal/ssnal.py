@@ -50,9 +50,15 @@ def sv_cvxcluster_ssnal(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0
         # Check Optimality Condition
         if crit < tol:
             break
-        if max(np.linalg.norm(gradX),np.linalg.norm(gradZ)) < mu_update_tol * (mu_update_tol_decay ** j) * min(1, np.sqrt(mu)):
-            mu *= gamma
-            mu = max(mu_min, mu)
+        normgradX = np.linalg.norm(gradX)
+        normgradZ = np.linalg.norm(gradZ)
+        if max(normgradX, normgradZ) < mu_update_tol * (mu_update_tol_decay ** j) * min(1, np.sqrt(mu)):
+            if normgradX < normgradZ:
+                mu *= gamma
+                mu = max(mu_min, mu)
+            else:
+                mu /= gamma
+                mu = min(mu_max, mu)
             j += 1
     return X, Z
 

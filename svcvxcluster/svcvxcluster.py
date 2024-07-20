@@ -19,7 +19,7 @@ class SolverConfig:
     armijo_iter: int = 10
     mu_update_tol: float = 1
     mu_update_tol_decay: float = 0.95
-    max_iter: int = 1000
+    max_iter: int = 100
     mu_min: float = 1e-5
     mu_max: float = 1e5
     cgtol_tau: float = 0.618
