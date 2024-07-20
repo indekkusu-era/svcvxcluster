@@ -13,23 +13,22 @@ from ..svcvxcluster import SvCvxCluster
 
 def benchmark_moons(n_samples, nscale_eps, nscale_C):
     X, y = make_moons(n_samples, noise=0.05, shuffle=True)
-    model = SvCvxCluster(30, alpha=0.4, alpha_prime=1)
+    model = SvCvxCluster(10, alpha=0.4, alpha_prime=1, pairing_strat='heuristic')
     t = perf_counter_ns()
     model.fit(X) # fit the default model
-    t2 = (perf_counter_ns() - t) / 1e9
-    rand_score = adjusted_rand_score(y, model.labels())
-    eps, C = model._eps, model._C
-    xbar, Z = model.Xbar_, model.Z_
     nn_graph = model._graph
-    solve_time = [{'eps': eps, 'C': C, 'solve_time': t2 / 1e9, 'rand_score': rand_score}]
+    solve_time = []
+    xbar = model.Xbar_
+    Z = model.Z_
     for scale1 in nscale_eps:
         for scale2 in nscale_C:
-            model2 = SvCvxCluster(nn='precomputed', eps=eps*scale1, C=C*scale2)
+            model2 = SvCvxCluster(nn='precomputed', eps=scale1, C=scale2)
             t = perf_counter_ns()
             model2.fit(X, graph=nn_graph, warm_start=False, X0=xbar, Z0=Z)
             t2 = (perf_counter_ns() - t) / 1e9
-            rand_score = adjusted_rand_score(y, model.labels())
-            solve_time.append({'eps': eps*scale1, 'C': C*scale2, 'solve_time': t2, 'rand_score': rand_score})
+            xbar = model2.Xbar_; Z = model2.Z_
+            rand_score = adjusted_rand_score(y, model2.labels())
+            solve_time.append({'eps': scale1, 'C': scale2, 'solve_time': t2, 'rand_score': rand_score})
     return pd.DataFrame(solve_time)
 
 
