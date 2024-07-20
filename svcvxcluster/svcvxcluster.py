@@ -61,7 +61,7 @@ class SvCvxCluster():
     def incidence_matrix(self):
         return nx.incidence_matrix(self._graph, oriented=True)
 
-    def fit(self, X: np.ndarray, y=None, graph: nx.Graph = None):
+    def fit(self, X: np.ndarray, y=None, graph: nx.Graph = None, warm_start=True, X0=None, Z0=None):
         assert not (self._nn == 'precomputed') or (graph is not None)
         self._X = X.T
         self._graph = self.calc_graph(self._X) if (graph is None) else graph
@@ -70,8 +70,12 @@ class SvCvxCluster():
                                                     self.incidence_matrix, self._alpha, self._alpha_prime)
         dict_solver_cfg = asdict(self._solver_config)
         warm_start_cfg = asdict(self._warm_start_solver_config)
-        xbar0, Z0 = self._solver_warm_start(self._X, self._eps, self._C, self._graph, 
-                                           **warm_start_cfg)
+        if warm_start:
+            xbar0, Z0 = self._solver_warm_start(self._X, self._eps, self._C, self._graph, 
+                                            **warm_start_cfg)
+        else:
+            xbar0 = X0.copy()
+            Z0 = Z0.copy()
         xbar, Z = self._solver(self._X, self._eps, self._C, self._graph, 
                                X0=xbar0, Z0=Z0, 
                                **dict_solver_cfg)

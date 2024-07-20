@@ -1,0 +1,9 @@
+# main requirements
+numpy
+scipy
+scikit-learn
+networkx
+tqdm
+# optional (for benchmarking)
+matplotlib
+ucimlrepo
