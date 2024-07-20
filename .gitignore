@@ -1,0 +1,4 @@
+*.ipynb
+experiments_archives/*
+*.pyc
+*.csv
