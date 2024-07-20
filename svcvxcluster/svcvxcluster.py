@@ -74,14 +74,14 @@ class SvCvxCluster():
             xbar0, Z0 = self._solver_warm_start(self._X, self._eps, self._C, self._graph, 
                                             **warm_start_cfg)
         else:
-            xbar0 = X0.copy()
-            Z0 = Z0.copy()
+            xbar0 = X0 if X0 is None else X0.copy()
+            Z0 = Z0 if Z0 is None else Z0.copy()
         xbar, Z = self._solver(self._X, self._eps, self._C, self._graph, 
                                X0=xbar0, Z0=Z0, 
                                **dict_solver_cfg)
         self.Xbar_ = xbar.copy()
         self.Z_ = Z.copy()
-        self.post_processing_graph_ = build_postprocessing_graph(self.Xbar_, self.incidence_matrix, self._eps)
+        self.post_processing_graph_ = build_postprocessing_graph(self.Xbar_, self.incidence_matrix, max(self._eps, 1e-4))
         self.labels()
         return self
     
