@@ -41,8 +41,6 @@ def sv_cvxcluster_ssnal(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0
                                 alpha0=armijo_alpha, beta=armijo_beta, sigma=armijo_sigma, max_iter=armijo_iter)
         X += dX * alpha
         Z += dZ * beta
-        BX = X @ incidence_matrix
-        prox_var = BX / mu + Z
         # Update Optimality Condition
         crit = max(evaluate_criterions(X, incidence_matrix, Z, A, eps, C, mu, criterions))
         if verbose:

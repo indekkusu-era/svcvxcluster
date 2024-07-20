@@ -13,7 +13,7 @@ from ..svcvxcluster import SvCvxCluster
 
 def benchmark_moons(n_samples, nscale_eps, nscale_C):
     X, y = make_moons(n_samples, noise=0.05, shuffle=True)
-    model = SvCvxCluster(10, alpha=0.4, alpha_prime=1, pairing_strat='heuristic')
+    model = SvCvxCluster(20, alpha=0.4, alpha_prime=1, pairing_strat='heuristic')
     t = perf_counter_ns()
     model.fit(X) # fit the default model
     nn_graph = model._graph
