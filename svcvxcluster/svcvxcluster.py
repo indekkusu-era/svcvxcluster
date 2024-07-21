@@ -1,7 +1,7 @@
 import networkx as nx
 import numpy as np
 from .solvers import ADMM, SSNAL
-from .utils import nn_pairs, nn_pairs_heuristic, auto_select_params, build_nn_graph
+from .utils import nn_pairs, auto_select_params, build_nn_graph
 from .postprocessing import clusters, build_postprocessing_graph
 from .criterions import kkt_relative_gap
 from typing import Union, Literal, Optional, Callable, Iterable
@@ -31,7 +31,6 @@ class SvCvxCluster():
     def __init__(self, nn: Union[int, Literal['precomputed']], 
                  eps: float = None, C: float = None,
                  alpha: float = None, alpha_prime: float = None,
-                 pairing_strat: Literal['original', 'heuristic'] = 'original',
                  solver_warm_start=ADMM, solver=SSNAL,
                  warm_start_solver_config: Optional[SolverConfig] = None,
                  solver_config: Optional[SolverConfig] = None):
@@ -41,7 +40,6 @@ class SvCvxCluster():
         self._alpha = alpha
         self._alpha_prime = alpha_prime
         self._nn = nn
-        self._pairing_strat = pairing_strat
         self._warm_start_solver_config = SolverConfig(max_iter=20, gamma=1, tol=1e-2)\
             if warm_start_solver_config is None else warm_start_solver_config
         self._solver_config = SolverConfig() if solver_config is None else solver_config
@@ -51,11 +49,7 @@ class SvCvxCluster():
         self.Z_ = None
     
     def calc_graph(self, A):
-        match self._pairing_strat:
-            case 'original':
-                return build_nn_graph(nn_pairs(A, self._nn))
-            case 'heuristic':
-                return build_nn_graph(nn_pairs_heuristic(A, self._nn))
+        return build_nn_graph(nn_pairs(A, self._nn))
     
     @property
     def incidence_matrix(self):
