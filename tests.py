@@ -2,9 +2,9 @@ import numpy as np
 from svcvxcluster import SvCvxCluster
 from svcvxcluster.svcvxcluster import SolverConfig
 from svcvxcluster.benchmark.spherical_shell import generate_semisphere
-from sklearn.datasets import make_moons
 from sklearn.metrics import adjusted_rand_score
 from time import perf_counter_ns
+import matplotlib.pyplot as plt
 
 np.random.seed(1234)
 
@@ -18,5 +18,8 @@ if __name__ == "__main__":
     t = perf_counter_ns()
     clust.fit(X)
     print((perf_counter_ns() - t) / 1e9)
-    # print(clust.incidence_matrix.dtype)
-    print(adjusted_rand_score(y, clust.labels()))
+    print(adjusted_rand_score(y, clust.labels_))
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(*X.T, c=clust.labels_)
+    plt.show()
