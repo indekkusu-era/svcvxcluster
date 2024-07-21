@@ -35,23 +35,24 @@ def sv_cvxcluster_admm(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0=
     if criterions is None:
         criterions = [relative_duality_gap]
     norm_grad = 1
-    incidence_matrix, laplacian_matrix, TTA, tau, normsqA, G, P, L, tol, m = initialize(A, graph)
+    incidence_matrix, laplacian_matrix, TTA, tau, normsqA, G, P, L, _, m = initialize(A, graph)
     cg_z = None
+    normA = np.linalg.norm(A)
     for i in (pbar := tqdm(range(max_iter))):
         Lprox = L - prox(P + mu * L, mu, eps, C) / mu
         tl = T(Lprox, incidence_matrix)
         Z = -TTA + tl
-        cg_z, cg_iter = cg(Z.T, laplacian_matrix, incidence_matrix, mu, X0=cg_z, tol=min(1e-5, norm_grad ** 1.618), n_iter=100)
+        cg_z, cg_iter = cg(Z.T, laplacian_matrix, incidence_matrix, mu, X0=cg_z, tol=min(cgtol_default, norm_grad ** cgtol_tau), n_iter=100)
         dP = - P - mu * Lprox + mu * Tstar(A + mu * cg_z.T, incidence_matrix)
-        norm_grad = np.linalg.norm(dP)
+        norm_grad = np.linalg.norm(dP) * np.sqrt(2 * m)
         P += dP
         L += tau * (P - prox(P + mu * L, mu, eps, C)) / mu
         mu *= gamma
         mu = max(mu_min, mu)
         X = A - T(P, incidence_matrix)
         Z = P[:, :m] - P[:, m:]
-        crit = max(evaluate_criterions(X, incidence_matrix, Z, A, eps, C, mu, criterions))
-        pbar.set_description(f"cg_iter: {cg_iter} | criterion: {crit:6f}")
+        crit = max(evaluate_criterions(X, incidence_matrix, Z, A, eps, C, mu, normA=normA, list_criterions=criterions))
+        pbar.set_description(f"cg_iter: {cg_iter} | criterion: {crit:.6f}")
         if crit < tol:
             break
     return X, Z

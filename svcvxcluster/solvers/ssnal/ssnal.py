@@ -25,33 +25,37 @@ def sv_cvxcluster_ssnal(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0
     dX = None
     n = A.shape[1]
     j = 0
+    normA = np.linalg.norm(A)
     for i in (pbar := (tqdm(range(max_iter)) if verbose else range(max_iter))):
         BX = X @ incidence_matrix
         prox_var = BX / mu + Z
-        gradX = ssnal_grad(X, A, incidence_matrix, prox_var, mu, eps, C)
-        gradZ = - mu * (Z - prox(prox_var, eps, C, 1 / mu))
+        dual_prox = prox(prox_var, eps, C, 1 / mu)
+        U = mu * (prox_var - dual_prox)
+        BXDiff = BX - U
+        gradX = ssnal_grad(X, A, incidence_matrix, dual_prox)
         Q = dprox(prox_var, eps, C, 1 / mu)
         normgrad = np.linalg.norm(gradX)
+        normgradZ = np.linalg.norm(BXDiff)
         cg_tol = min(cgtol_default, normgrad ** (1 + cgtol_tau))
         dX = ssnal_cg(incidence_matrix, gradX, mu, n, Q, dX, cg_tol)
-        dZ = (gradZ + Q * (dX @ incidence_matrix)) / mu
+        dZ = (BXDiff + Q * (dX @ incidence_matrix)) / mu
         alpha = armijo_line_search(X, A, Z, incidence_matrix, eps, C, mu, gradX, dX,
                                 alpha0=armijo_alpha, beta=armijo_beta, sigma=armijo_sigma, max_iter=armijo_iter)
-        beta = armijo_dual(X + dX * alpha, A, Z, incidence_matrix, eps, C, mu, gradZ, dZ,
+        beta = armijo_dual(X, A, Z, incidence_matrix, eps, C, mu, BXDiff, dZ,
                                 alpha0=armijo_alpha, beta=armijo_beta, sigma=armijo_sigma, max_iter=armijo_iter)
         X += dX * alpha
         Z += dZ * beta
         # Update Optimality Condition
-        crit = max(evaluate_criterions(X, incidence_matrix, Z, A, eps, C, mu, criterions))
+        crit = max(evaluate_criterions(X, incidence_matrix, Z, A, eps, C, mu, U=U, 
+                                       BXDiff=BXDiff, normA=normA, normgradZ=normgradZ, 
+                                       normU=np.linalg.norm(U), list_criterions=criterions))
         if verbose:
             pbar.set_description(f"mu: {mu:.6f} | criterion: {crit:.6f}")
         # Check Optimality Condition
         if crit < tol:
             break
-        normgradX = np.linalg.norm(gradX)
-        normgradZ = np.linalg.norm(gradZ)
-        if max(normgradX, normgradZ) < mu_update_tol * (mu_update_tol_decay ** j) * min(1, np.sqrt(mu)):
-            if normgradX < normgradZ:
+        if max(normgrad, normgradZ) < mu_update_tol * (mu_update_tol_decay ** j) * min(1, np.sqrt(mu)):
+            if normgrad < normgradZ:
                 mu *= gamma
                 mu = max(mu_min, mu)
             else:

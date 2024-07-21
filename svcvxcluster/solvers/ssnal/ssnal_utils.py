@@ -6,10 +6,10 @@ def prox(X, eps, C, mu):
 
 def dprox(X, eps, C, mu):
     xbar = np.abs(X) - mu * eps
-    return csr_array(((xbar >= 0) & (xbar <= C)).astype(int), dtype=float)
+    return csr_array(((xbar >= 0) & (xbar <= C)).astype(int))
 
-def ssnal_grad(X, A, B, prox_var, mu, eps, C):
-    return X - A + prox(prox_var, eps, C, 1 / mu) @ B.T
+def ssnal_grad(X, A, B, prox):
+    return X - A + prox @ B.T
 
 def obj_function(X, A, Z, B, eps, C, mu):
     bx = X @ B
