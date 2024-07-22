@@ -1,31 +1,11 @@
 import networkx as nx
 import numpy as np
+from dataclasses import asdict
+from typing import Union, Literal, Optional
 from .solvers import ADMM, SSNAL
+from .solvers.solver_config import SolverConfig
 from .utils import nn_pairs, auto_select_params, build_nn_graph
 from .postprocessing import clusters, build_postprocessing_graph
-from .criterions import kkt_relative_gap
-from typing import Union, Literal, Optional, Callable, Iterable
-from dataclasses import dataclass, asdict
-
-@dataclass(frozen=True)
-class SolverConfig:
-    mu: float = 1
-    gamma: float = 0.75
-    tol: float = 1e-6 
-    criterions: Iterable[Callable] = None
-    armijo_alpha: float = 1
-    armijo_sigma: float = 0.25
-    armijo_beta: float = 0.75
-    armijo_iter: int = 10
-    mu_update_tol: float = 1
-    mu_update_tol_decay: float = 0.95
-    max_iter: int = 1000
-    mu_min: float = 1e-5
-    mu_max: float = 1e5
-    cgtol_tau: float = 0.618
-    cgtol_default: float = 1e-5
-    parallel: bool = False
-    verbose: bool = True
 
 class SvCvxCluster():
     def __init__(self, nn: Union[int, Literal['precomputed']], 
@@ -91,10 +71,12 @@ class SvCvxCluster():
         return self.labels_
 
 class Norm1CvxCluster(SvCvxCluster):
-    def __init__(self, nn: Union[int, Literal['precomputed']], 
-                 eps: float = None, C: float = None,
+    def __init__(self, 
+                 nn: Union[int, Literal['precomputed']], gamma: float = None,
                  alpha: float = None, alpha_prime: float = None,
-                 pairing_strat=Literal['original', 'heuristic'],
                  solver_warm_start=ADMM, solver=SSNAL,
+                 warm_start_solver_config: Optional[SolverConfig] = None,
                  solver_config: Optional[SolverConfig] = None):
-        ...
+        super().__init__(nn, 0, gamma, alpha, alpha_prime, solver_warm_start, 
+                         solver, warm_start_solver_config, solver_config)
+
