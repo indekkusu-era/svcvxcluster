@@ -8,6 +8,7 @@ import numba as nb
 from scipy.sparse import identity as spI
 from scipy.sparse import linalg as splinalg
 
+# TODO: implement shared memory
 @nb.njit()
 def i_mubpbx(rowb, idxptrb, datab, nrow, idxp, datap, x, mu):
     res = x
