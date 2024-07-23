@@ -9,12 +9,12 @@ import matplotlib.pyplot as plt
 np.random.seed(1234)
 
 if __name__ == "__main__":
-    X, y = generate_semisphere(1.0, 1.4, 1.6, 2.0, 10000)
+    X, y = generate_semisphere(1.0, 1.4, 1.6, 2.0, 200000)
     X = X.T
     clust = SvCvxCluster(10, alpha=0.4, alpha_prime=2, 
                          warm_start_solver_config=SolverConfig(gamma=0.95, tol=0.1, max_iter=25), 
                          solver_config=SolverConfig(gamma=0.5, mu_update_tol=1, 
-                                        armijo_sigma=0.5, mu_update_tol_decay=0.5, armijo_iter=10, parallel=False))
+                                        armijo_sigma=0.5, mu_update_tol_decay=0.5, armijo_iter=10, cgtol_tau=1.2))
     t = perf_counter_ns()
     clust.fit(X)
     print(clust.Xbar_)
