@@ -3,7 +3,7 @@ from scipy.sparse import identity as spI
 from scipy.sparse import linalg as splinalg
 from .ssnal_utils import obj_function
 
-def ssnal_cg(B, grad, mu, n, subgrad_P, X0=None, tol=1e-5, parallel=False):
+def ssnal_cg(B, grad, mu, n, subgrad_P, X0=None, tol=1e-5, parallel=False, d=None):
     # solve Hx + g = 0
     if X0 is None:
         dX = - grad.copy()
