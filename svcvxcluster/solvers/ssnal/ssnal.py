@@ -3,8 +3,6 @@ import networkx as nx
 from tqdm import tqdm
 from .ssnal_utils import ssnal_grad, prox, dprox
 from .ssnal_algorithms import armijo_line_search, armijo_dual, ssnal_cg
-# The below code is used in experiments on parallel computing
-# from ...experimentals.lab import ssnal_cg
 from ...criterions import evaluate_criterions, primal_relative_kkt_residual, dual_relative_kkt_residual, kkt_relative_gap
 
 def sv_cvxcluster_ssnal(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0=None, Z0=None,
@@ -40,13 +38,14 @@ def sv_cvxcluster_ssnal(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0
         normgradZ = np.linalg.norm(BXDiff)
         cg_tol = min(cgtol_default, normgrad ** (1 + cgtol_tau))
         dX = ssnal_cg(incidence_matrix, gradX, mu, n, Q, dX, cg_tol, parallel=parallel, d=d)
-        dZ = (BXDiff + Q * (dX @ incidence_matrix)) / mu
+        Bdx = dX @ incidence_matrix
+        dZ = (BXDiff + Bdx * Q) / mu
         alpha = armijo_line_search(X, A, Z, incidence_matrix, eps, C, mu, gradX, dX,
                                 alpha0=armijo_alpha, beta=armijo_beta, sigma=armijo_sigma, max_iter=armijo_iter)
         beta = armijo_dual(X, A, Z, incidence_matrix, eps, C, mu, BXDiff, dZ,
                                 alpha0=armijo_alpha, beta=armijo_beta, sigma=armijo_sigma, max_iter=armijo_iter)
-        X += dX * alpha
         Z += dZ * beta
+        X += dX * alpha
         # Update Optimality Condition
         crit = max(evaluate_criterions(X, incidence_matrix, Z, A, eps, C, mu, U=U, 
                                        BXDiff=BXDiff, normA=normA, normgradZ=normgradZ, 

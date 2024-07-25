@@ -5,7 +5,7 @@ Replication of the Methodology from Convex Clustering [1]
 """
 import numpy as np
 
-def generate_semisphere(r1_inner, r2_inner, r1_outer, r2_outer, n):
+def load_semisphere(r1_inner, r2_inner, r1_outer, r2_outer, n):
     # Generate random points for the inner semi-spherical shell
     radius_inner = (r2_inner - r1_inner) * np.random.rand(n) + r1_inner
     theta_inner = 2 * np.pi * np.random.rand(n)
@@ -30,6 +30,6 @@ def generate_semisphere(r1_inner, r2_inner, r1_outer, r2_outer, n):
     X = np.hstack((A_inner, A_outer))
     label = np.concatenate((np.ones(n), 2 * np.ones(n)))
 
-    return X, label
+    return X.T, label
 
 

@@ -4,90 +4,182 @@
 # NOTE: This is currently planning for parallel implementation
 
 import numpy as np
-import numba as nb
-from scipy.sparse import identity as spI
+import networkx as nx
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from tqdm import tqdm
 from scipy.sparse import linalg as splinalg
-from scipy.sparse import csr_matrix
+from scipy.sparse import identity as spI
+from ilupp import IChol0Preconditioner
+from ..solvers.ssnal.ssnal_algorithms import ssnal_cg, armijo_line_search, armijo_dual
+from ..solvers.ssnal.ssnal_utils import prox, dprox, ssnal_grad
+from ..criterions import evaluate_criterions
+from ..criterions import primal_relative_kkt_residual, dual_relative_kkt_residual, kkt_relative_gap
 
-@nb.njit(parallel=True)
-def i_mubpbx(rowb, idxptrb, datab, nrow, idxp, datap, x, mu):
-    xprime = x.copy()
-    for row in nb.prange(nrow-1):
-        for row2 in nb.prange(nrow-1):
-            rang1 = np.arange(rowb[row], rowb[row+1])
-            rang2 = np.arange(rowb[row2], rowb[row2+1])
-            ptr1 = idxptrb[rang1]
-            ptr2 = idxptrb[rang2]
-            data1 = datab[rang1]
-            data2 = datab[rang2]
-            i = 0; j = 0; k = 0
-            maxptr = max(len(idxp), len(ptr1), len(ptr2))
-            for _ in range(maxptr):
-                if i >= len(ptr1) or j >= len(ptr2) or k >= len(idxp):
-                    break
-                curidx1, curidx2, curidxp = ptr1[i], ptr2[j], idxp[k]
-                minidx = min(curidx1, curidx2, curidxp)
-                if (curidx1 == curidx2) and (curidx2 == curidxp):
-                    xprime[row] += mu * data1[i] * data2[j] * datap[k] * x[row2]
-                    i += 1; j += 1; k += 1
-                    continue
-                if curidx1 == minidx:
-                    i += 1
-                if curidx2 == minidx:
-                    j += 1
-                if curidxp == minidx:
-                    k += 1
-    return xprime
+def sv_cvxcluster_iter_1d(Ai, eps, C, incidence_matrix, Xi, Zi, mu, I, dX_cg, 
+                          cgtol_default, cgtol_tau, 
+                          armijo_alpha, armijo_beta, armijo_sigma, armijo_iter):
+    BX = Xi @ incidence_matrix
+    prox_var = BX / mu + Zi
+    dual_prox = prox(prox_var, eps, C, 1 / mu)
+    U = mu * (prox_var - dual_prox)
+    BXDiff = BX - U
+    gradX = ssnal_grad(Xi, Ai, incidence_matrix, dual_prox)
+    Q = dprox(prox_var, eps, C, 1 / mu)
+    # CG
+    BP = incidence_matrix * Q
+    sub_laplacian = BP @ BP.T
+    mat = I + sub_laplacian / mu
+    normgrad = np.linalg.norm(gradX)
+    cg_tol = min(cgtol_default, normgrad ** (1 + cgtol_tau))
+    dX, exit_code = splinalg.cg(mat, -gradX, atol=cg_tol, x0=dX_cg, M=IChol0Preconditioner(mat))
+    Bdx = dX @ BP
+    dZ = (BXDiff + Bdx) / mu
+    alpha = armijo_line_search(Xi, Ai, Zi, incidence_matrix, eps, C, mu, gradX, dX,
+                                alpha0=armijo_alpha, beta=armijo_beta, sigma=armijo_sigma, max_iter=armijo_iter)
+    beta = armijo_dual(Xi, Ai, Zi, incidence_matrix, eps, C, mu, BXDiff, dZ,
+                                alpha0=armijo_alpha, beta=armijo_beta, sigma=armijo_sigma, max_iter=armijo_iter)
+    return Xi + dX * alpha, Zi + dZ * beta, dX
 
-@nb.njit()
-def sparse_cg_iter(b_indptr, b_idx, b_data, p_idx, p_data, X, R, P, n, mu):
-    Ap = i_mubpbx(b_indptr, b_idx, b_data, n, p_idx, p_data, P, mu)
-    alpha = np.sum(R * R) / np.sum(P * Ap)
-    X1 = X + alpha * P
-    R1 = R - alpha * Ap
-    beta = np.sum(R1 ** 2) / np.sum(R ** 2)
-    P1 = R1 + beta * P
-    return X1, R1, P1
 
-@nb.njit(parallel=True)
-def sparse_cg(b_indptr, b_idx, b_data, p_indptr, p_idx, p_data, grad, dX, mu, n, d, niter, tol):
-    for i in nb.prange(d-1):
-        startP = p_indptr[i]
-        endP = p_indptr[i+1]
-        rangP = np.arange(startP, endP)
-        idxP = p_idx[rangP]
-        dataP = p_data[rangP]
-        b_target = -grad[i]
-        X = dX[i].copy()
-        R = b_target - i_mubpbx(b_indptr, b_idx, b_data, n, idxP, dataP, X, mu)
-        P = R.copy()
-        for j in range(niter):
-            if np.linalg.norm(R) < tol:
-                break
-            X, R, P = sparse_cg_iter(b_indptr, b_idx, b_data, idxP, dataP, X, R, P, n, mu)
-        dX[i] = X
-    return dX
+def thread_sv_cvxcluster_1d(A: np.ndarray, eps: float, C: float, incidence_matrix, X0, Z0,
+                         mu=1, gamma=0.75, tol=1e-6, criterions=None,
+                         armijo_alpha=1, armijo_sigma=0.25, armijo_beta=0.75, armijo_iter=10, 
+                         mu_update_tol=1, mu_update_tol_decay=0.95,
+                         max_iter=1000, mu_min=1e-5, mu_max=1e5, cgtol_tau=0.618, cgtol_default=1e-5, 
+                         parallel=True, verbose=True):
+    if criterions is None:
+        criterions = [primal_relative_kkt_residual, dual_relative_kkt_residual, kkt_relative_gap]
+    X = X0.copy()
+    Z = Z0.copy()
+    dX = np.zeros(X.shape)
+    n = len(A)
+    j = 0
+    normA = np.linalg.norm(A)
+    I = spI(n)
+    for i in (range(max_iter)):
+        X, Z, dX = sv_cvxcluster_iter_1d(A, eps, C, incidence_matrix, 
+                                               X, Z, mu, I, dX, 
+                                               cgtol_default, cgtol_tau, armijo_alpha, 
+                                               armijo_beta, armijo_sigma, armijo_iter)
+        BX = X @ incidence_matrix
+        prox_var = BX / mu + Z
+        dual_prox = prox(prox_var, eps, C, 1 / mu)
+        U = mu * (prox_var - dual_prox)
+        BXDiff = BX - U
+        normgrad = np.linalg.norm(ssnal_grad(X, A, incidence_matrix, dual_prox))
+        normgradZ = np.linalg.norm(BXDiff)
+        crit = max(evaluate_criterions(X, incidence_matrix, Z, A, eps, C, mu, U=U, 
+                                       BXDiff=BXDiff, normA=normA, normgradZ=normgradZ, 
+                                       normU=np.linalg.norm(U), list_criterions=criterions))
+        print(f"iter {i+1} crit {crit:.7f}")
+        if crit < tol:
+            break
 
-def ssnal_cg_parallel(B, grad, mu, n, d, subgrad_P, X0, tol=1e-5, max_iter=100):
-    return sparse_cg(B.indptr, B.indices, B.data, 
-                     subgrad_P.indptr, subgrad_P.indices, subgrad_P.data, 
-                     grad, X0, 1 / mu, n, d, max_iter, tol)
+        if max(normgrad, normgradZ) < mu_update_tol * (mu_update_tol_decay ** j) * min(1, np.sqrt(mu)):
+            if normgrad < normgradZ:
+                mu *= gamma
+                mu = max(mu_min, mu)
+            else:
+                mu /= gamma
+                mu = min(mu_max, mu)
+            j += 1
+    return X, Z
 
-def ssnal_cg(B, grad, mu, n, subgrad_P, X0=None, tol=1e-5, parallel=False, d=None):
-    # solve Hx + g = 0
+def thread_sv_cvx_cluster(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0=None, Z0=None,
+                         mu=1, gamma=0.75, tol=1e-6, criterions=None,
+                         armijo_alpha=1, armijo_sigma=0.25, armijo_beta=0.75, armijo_iter=10, 
+                         mu_update_tol=1, mu_update_tol_decay=0.95,
+                         max_iter=1000, mu_min=1e-5, mu_max=1e5, cgtol_tau=0.618, cgtol_default=1e-5, 
+                         parallel=True, verbose=True):
+    d = A.shape[0]; n = A.shape[1]
+    if criterions is None:
+        criterions = [primal_relative_kkt_residual, dual_relative_kkt_residual, kkt_relative_gap]
+    incidence_matrix = nx.incidence_matrix(graph, oriented=True)
     if X0 is None:
-        dX = - grad.copy()
+        chol_prec = IChol0Preconditioner(spI(n) + incidence_matrix @ incidence_matrix.T / mu)
+        X0 = -ssnal_grad(A, A, incidence_matrix, prox(A @ incidence_matrix / mu, eps, C, 1/mu))
+        for i in range(d):
+            u = X0[i].copy()
+            chol_prec.apply(u)
+            X0[i] = u
+    if Z0 is None:
+        Z0 = np.zeros((A.shape[0], incidence_matrix.shape[1]))
+    X = np.zeros(X0.shape)
+    Z = np.zeros(Z0.shape)
+    threads = []
+    with ThreadPoolExecutor(max_workers=None) as executor:
+        for i in range(d):
+            threads.append(executor.submit(thread_sv_cvxcluster_1d, 
+                        A[i], eps, C, incidence_matrix, X0[i], Z0[i],
+                        mu, gamma, tol, criterions,
+                        armijo_alpha, armijo_sigma, armijo_beta, armijo_iter, 
+                        mu_update_tol, mu_update_tol_decay,
+                        max_iter, mu_min, mu_max, cgtol_tau, cgtol_default, 
+                        parallel, verbose))
+        
+        for i, task in enumerate(threads):
+            X[i], Z[i] = task.result()
+    return X, Z
+
+def sv_cvxcluster_ssnal(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0=None, Z0=None,
+                         mu=1, gamma=0.75, tol=1e-6, criterions=None,
+                         armijo_alpha=1, armijo_sigma=0.25, armijo_beta=0.75, armijo_iter=10, 
+                         mu_update_tol=1, mu_update_tol_decay=0.95,
+                         max_iter=1000, mu_min=1e-5, mu_max=1e5, cgtol_tau=0.618, cgtol_default=1e-5, 
+                         parallel=False, verbose=False):
+    if criterions is None:
+        criterions = [primal_relative_kkt_residual, dual_relative_kkt_residual, kkt_relative_gap]
+    incidence_matrix = nx.incidence_matrix(graph, oriented=True)
+    if X0 is None:
+        X = A.copy()
     else:
-        dX = X0.copy()
-    if not parallel:
-        for i, row in enumerate(subgrad_P):
-            BP = B * row
-            sub_laplacian = BP @ BP.T
-            mat = spI(n) + sub_laplacian / mu
-            dX[i], _ = splinalg.cg(mat, -grad[i], atol=tol, x0=dX[i])
-        return dX
+        X = X0.copy()
+    if Z0 is None:
+        Z = np.zeros((A.shape[0], incidence_matrix.shape[1]))
     else:
-        B = csr_matrix(B.T) # TODO: Move this to real code
-        new_dx = ssnal_cg_parallel(B, grad, mu, n, d, subgrad_P, dX, tol)
-        return new_dx
+        Z = Z0.copy()
+    dX = None
+    n = A.shape[1]; d = A.shape[0]
+    j = 0
+    normA = np.linalg.norm(A)
+    for i in (pbar := (tqdm(range(max_iter)) if verbose else range(max_iter))):
+        BX = X @ incidence_matrix
+        prox_var = BX / mu + Z
+        dual_prox = prox(prox_var, eps, C, 1 / mu)
+        U = mu * (prox_var - dual_prox)
+        BXDiff = BX - U
+        gradX = ssnal_grad(X, A, incidence_matrix, dual_prox)
+        Q = dprox(prox_var, eps, C, 1 / mu)
+        normgrad = np.linalg.norm(gradX)
+        normgradZ = np.linalg.norm(BXDiff)
+        cg_tol = min(cgtol_default, normgrad ** (1 + cgtol_tau))
+        dX = ssnal_cg(incidence_matrix, gradX, mu, n, Q, dX, cg_tol, parallel=parallel, d=d)
+        Bdx = dX @ incidence_matrix
+        dZ = (BXDiff + Q * Bdx) / mu
+        alpha = armijo_line_search(X, A, Z, incidence_matrix, eps, C, mu, gradX, dX,
+                                alpha0=armijo_alpha, beta=armijo_beta, sigma=armijo_sigma, max_iter=armijo_iter)
+        beta = armijo_dual(X, A, Z, incidence_matrix, eps, C, mu, BXDiff, dZ,
+                                alpha0=armijo_alpha, beta=armijo_beta, sigma=armijo_sigma, max_iter=armijo_iter)
+        Z += dZ * beta
+        X += dX * alpha
+        # Update Optimality Condition
+        crit = max(evaluate_criterions(X, incidence_matrix, Z, A, eps, C, mu, U=U, 
+                                       BXDiff=BXDiff, normA=normA, normgradZ=normgradZ, 
+                                       normU=np.linalg.norm(U), list_criterions=criterions))
+        if verbose:
+            pbar.set_description(f"mu: {mu:.6f} | criterion: {crit:.6f}")
+        # Check Optimality Condition
+        if crit < tol:
+            break
+        if max(normgrad, normgradZ) < mu_update_tol * (mu_update_tol_decay ** j) * min(1, np.sqrt(mu)):
+            if normgrad < normgradZ:
+                mu *= gamma
+                mu = max(mu_min, mu)
+            else:
+                mu /= gamma
+                mu = min(mu_max, mu)
+            j += 1
+    return X, Z
+
 
