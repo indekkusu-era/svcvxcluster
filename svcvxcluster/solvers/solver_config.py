@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Union, Literal, Type
+from ilupp import _BaseWrapper
 
 @dataclass(frozen=True)
 class SolverConfig:
@@ -20,3 +21,4 @@ class SolverConfig:
     cgtol_default: float = 1e-5
     parallel: bool = False
     verbose: bool = True
+    preconditioner: Union[Literal['auto', 'fixed'], Type[_BaseWrapper]] = 'auto'

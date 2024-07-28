@@ -1,12 +1,15 @@
 import numpy as np
 import networkx as nx
+from typing import Literal, Union, Type
 from tqdm import tqdm
+from scipy.sparse import identity
+from ilupp import _BaseWrapper, IChol0Preconditioner
 from .ssnal_utils import ssnal_grad, prox, dprox
 from .ssnal_algorithms import armijo_line_search, armijo_dual, ssnal_cg
 from ...criterions import evaluate_criterions, primal_relative_kkt_residual, dual_relative_kkt_residual, kkt_relative_gap
 
 def sv_cvxcluster_ssnal(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0=None, Z0=None,
-                         mu=1, gamma=0.75, tol=1e-6, criterions=None,
+                         mu=1, gamma=0.75, tol=1e-6, preconditioner: Union[Literal['auto', 'fixed'], Type[_BaseWrapper]] = 'auto', criterions=None,
                          armijo_alpha=1, armijo_sigma=0.25, armijo_beta=0.75, armijo_iter=10, 
                          mu_update_tol=1, mu_update_tol_decay=0.95,
                          max_iter=1000, mu_min=1e-5, mu_max=1e5, cgtol_tau=0.618, cgtol_default=1e-5, 
@@ -14,6 +17,14 @@ def sv_cvxcluster_ssnal(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0
     if criterions is None:
         criterions = [primal_relative_kkt_residual, dual_relative_kkt_residual, kkt_relative_gap]
     incidence_matrix = nx.incidence_matrix(graph, oriented=True)
+    n = A.shape[1]; d = A.shape[0]
+    match preconditioner:
+        case 'auto':
+            m_precond = None
+        case 'fixed':
+            m_precond = IChol0Preconditioner(identity(n) + mu * incidence_matrix @ incidence_matrix.T)
+        case _:
+            m_precond = preconditioner
     if X0 is None:
         X = A.copy()
     else:
@@ -23,7 +34,6 @@ def sv_cvxcluster_ssnal(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0
     else:
         Z = Z0.copy()
     dX = None
-    n = A.shape[1]; d = A.shape[0]
     j = 0
     normA = np.linalg.norm(A)
     for i in (pbar := (tqdm(range(max_iter)) if verbose else range(max_iter))):
@@ -37,7 +47,7 @@ def sv_cvxcluster_ssnal(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0
         normgrad = np.linalg.norm(gradX)
         normgradZ = np.linalg.norm(BXDiff)
         cg_tol = min(cgtol_default, normgrad ** (1 + cgtol_tau))
-        dX = ssnal_cg(incidence_matrix, gradX, mu, n, Q, dX, cg_tol, parallel=parallel, d=d)
+        dX = ssnal_cg(incidence_matrix, gradX, mu, n, Q, dX, cg_tol, parallel=parallel, preconditioner=m_precond)
         Bdx = dX @ incidence_matrix
         dZ = (BXDiff + Bdx * Q) / mu
         alpha = armijo_line_search(X, A, Z, incidence_matrix, eps, C, mu, gradX, dX,

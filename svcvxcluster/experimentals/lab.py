@@ -87,7 +87,7 @@ def thread_sv_cvxcluster_1d(A: np.ndarray, eps: float, C: float, incidence_matri
     return X, Z
 
 def thread_sv_cvx_cluster(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0=None, Z0=None,
-                         mu=1, gamma=0.75, tol=1e-6, criterions=None,
+                         mu=1, gamma=0.75, tol=1e-6, criterions=None, preconditioner='auto',
                          armijo_alpha=1, armijo_sigma=0.25, armijo_beta=0.75, armijo_iter=10, 
                          mu_update_tol=1, mu_update_tol_decay=0.95,
                          max_iter=1000, mu_min=1e-5, mu_max=1e5, cgtol_tau=0.618, cgtol_default=1e-5, 
