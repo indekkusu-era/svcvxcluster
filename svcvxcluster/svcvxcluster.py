@@ -2,7 +2,7 @@ import networkx as nx
 import numpy as np
 from dataclasses import asdict
 from typing import Union, Literal, Optional
-from .solvers import ADMM, SSNAL
+from .solvers import SGS_ADMM, Thread_SSNAL
 from .solvers.solver_config import SolverConfig
 from .utils import nn_pairs, auto_select_params, build_nn_graph
 from .postprocessing import clusters, build_postprocessing_graph
@@ -11,7 +11,7 @@ class SvCvxCluster():
     def __init__(self, nn: Union[int, Literal['precomputed']], 
                  eps: float = None, C: float = None,
                  alpha: float = None, alpha_prime: float = None,
-                 solver_warm_start=ADMM, solver=SSNAL,
+                 solver_warm_start=SGS_ADMM, solver=Thread_SSNAL,
                  warm_start_solver_config: Optional[SolverConfig] = None,
                  solver_config: Optional[SolverConfig] = None):
         assert not (eps is None or C is None) or not (alpha is None or alpha_prime is None), "you must specify either eps, C or alpha, alpha_prime. If you specify both, eps and C will be selected"
@@ -20,7 +20,7 @@ class SvCvxCluster():
         self._alpha = alpha
         self._alpha_prime = alpha_prime
         self._nn = nn
-        self._warm_start_solver_config = SolverConfig(max_iter=20, gamma=1, tol=1e-2)\
+        self._warm_start_solver_config = SolverConfig(max_iter=20, gamma=1, tol=0.25)\
             if warm_start_solver_config is None else warm_start_solver_config
         self._solver_config = SolverConfig() if solver_config is None else solver_config
         self._solver_warm_start = solver_warm_start
@@ -35,7 +35,7 @@ class SvCvxCluster():
     def incidence_matrix(self):
         return nx.incidence_matrix(self._graph, oriented=True)
 
-    def fit(self, X: np.ndarray, y=None, graph: nx.Graph = None, warm_start=True, X0=None, Z0=None):
+    def fit(self, X: np.ndarray, y=None, graph: nx.Graph = None, warm_start=False, X0=None, Z0=None):
         assert not (self._nn == 'precomputed') or (graph is not None)
         self._X = X.T
         self._graph = self.calc_graph(self._X) if (graph is None) else graph
@@ -73,10 +73,9 @@ class SvCvxCluster():
 class Norm1CvxCluster(SvCvxCluster):
     def __init__(self, 
                  nn: Union[int, Literal['precomputed']], gamma: float = None,
-                 alpha: float = None, alpha_prime: float = None,
-                 solver_warm_start=ADMM, solver=SSNAL,
+                 solver_warm_start=SGS_ADMM, solver=Thread_SSNAL,
                  warm_start_solver_config: Optional[SolverConfig] = None,
                  solver_config: Optional[SolverConfig] = None):
-        super().__init__(nn, 0, gamma, alpha, alpha_prime, solver_warm_start, 
-                         solver, warm_start_solver_config, solver_config)
+        super().__init__(nn, 0, gamma, solver_warm_start=solver_warm_start, 
+                         solver=solver, warm_start_solver_config=warm_start_solver_config, solver_config=solver_config)
 
