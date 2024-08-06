@@ -12,8 +12,8 @@ class SolverConfig:
     armijo_sigma: float = 0.25
     armijo_beta: float = 0.75
     armijo_iter: int = 10
-    mu_update_tol: float = 1
-    mu_update_tol_decay: float = 0.75
+    mu_update_tol: float = 2
+    mu_update_tol_decay: float = 0.9
     max_iter: int = 1000
     mu_min: float = 1e-5
     mu_max: float = 1e5

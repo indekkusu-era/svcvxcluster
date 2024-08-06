@@ -39,9 +39,9 @@ def sv_cvx_cluster_sgs_padmm(A: np.ndarray, eps: float, C: float, graph: nx.Grap
         # Calculate H inv Grad
         dx = -gradx.T
         M = I + ltri_laplacian / mu
-        spsolve_triangular(csr_matrix(M.T), dx, lower=False, overwrite_b=True)
-        dx += degree_diag @ dx / mu
         spsolve_triangular(M, dx, overwrite_b=True)
+        dx += degree_diag @ dx / mu
+        spsolve_triangular(csr_matrix(M.T), dx, lower=False, overwrite_b=True)
         X += dx.T
         BX = X @ incidence_matrix
         prox_var = BX / mu + Z
