@@ -20,7 +20,7 @@ class SvCvxCluster():
         self._alpha = alpha
         self._alpha_prime = alpha_prime
         self._nn = nn
-        self._warm_start_solver_config = SolverConfig(max_iter=50, gamma=1, tol=1e-4)\
+        self._warm_start_solver_config = SolverConfig(max_iter=50, gamma=1, tol=1e-2)\
             if warm_start_solver_config is None else warm_start_solver_config
         self._solver_config = SolverConfig() if solver_config is None else solver_config
         self._solver_warm_start = solver_warm_start

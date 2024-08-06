@@ -9,9 +9,9 @@ import matplotlib.pyplot as plt
 
 if __name__ == "__main__":
     X, y = load_semisphere(1.0, 1.4, 1.6, 2.0, 200000)
-    clust = SvCvxCluster(10, alpha=0.4, alpha_prime=20)
+    clust = SvCvxCluster(10, alpha=0.75, alpha_prime=2)
     t = perf_counter_ns()
-    clust.fit(X, warm_start=True)
+    clust.fit(X, warm_start=False)
     print("Solve Time:", (perf_counter_ns() - t) / 1e9)
     print("Adjusted Rand Score:", adjusted_rand_score(y, clust.labels_))
     # plt.scatter(*X.T, c=clust.labels_)
