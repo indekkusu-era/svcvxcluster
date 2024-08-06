@@ -67,7 +67,6 @@ def thread_sv_cvx_cluster(A: np.ndarray, eps: float, C: float, graph: nx.Graph, 
     normA = np.linalg.norm(A)
     j = 0
     for _ in (pbar := (tqdm(range(max_iter)) if verbose else range(max_iter))):
-        Z= Z.copy()
         threads = []
         with ThreadPoolExecutor(max_workers=None) as executor:
             for i in range(d):
