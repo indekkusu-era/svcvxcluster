@@ -8,7 +8,7 @@ from time import perf_counter_ns
 import matplotlib.pyplot as plt
 
 if __name__ == "__main__":
-    X, y = load_semisphere(1.0, 1.4, 1.6, 2.0, 200000)
+    X, y = load_large(1000000, 10) # load_semisphere(1.0, 1.4, 1.6, 2.0, 200000)
     clust = SvCvxCluster(10, alpha=0.75, alpha_prime=2)
     t = perf_counter_ns()
     clust.fit(X, warm_start=False)

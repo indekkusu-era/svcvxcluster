@@ -4,10 +4,8 @@ from scipy.sparse import csr_array, lil_array
 def prox(X, eps, C, mu):
     return np.sign(X) * np.clip(np.abs(X) - mu * eps, 0, C)
 
-def dprox(X, eps, C, mu, flatten=False):
+def dprox(X, eps, C, mu):
     xbar = np.abs(X) - mu * eps
-    if flatten:
-        return lil_array(((xbar >= 0) & (xbar <= C)).astype(int))
     return csr_array(((xbar >= 0) & (xbar <= C)).astype(int))
  
 def ssnal_grad(X, A, B, prox):

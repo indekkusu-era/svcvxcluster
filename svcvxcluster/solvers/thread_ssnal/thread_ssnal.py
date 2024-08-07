@@ -59,7 +59,7 @@ def thread_sv_cvx_cluster(A: np.ndarray, eps: float, C: float, graph: nx.Graph, 
             chol_prec.apply(u)
             X0[i] = u
     if Z0 is None:
-        Z0 = np.zeros((A.shape[0], incidence_matrix.shape[1]))
+        Z0 = np.zeros((d, incidence_matrix.shape[1]))
     X = X0.copy()
     dX = np.zeros(X.shape)
     Z = Z0.copy()
