@@ -11,11 +11,11 @@ from time import perf_counter_ns
 import matplotlib.pyplot as plt
 
 import numpy as np
-# np.random.seed(727)
+np.random.seed(727)
 
 if __name__ == "__main__":
-    X, y = load_moons(10000) # load_semisphere(1.0, 1.4, 1.6, 2.0, 200000)
-    clust = SvCvxCluster(10, alpha=0.4, alpha_prime=5, solver=thread_sv_cvx_cluster_saddle)
+    X, y = load_semisphere(1.0, 1.4, 1.6, 2.0, 2000)
+    clust = SvCvxCluster(10, alpha=0.4, alpha_prime=1, solver=thread_sv_cvx_cluster_saddle)
     t = perf_counter_ns()
     clust.fit(X, warm_start=False)
     print("Solve Time:", (perf_counter_ns() - t) / 1e9)

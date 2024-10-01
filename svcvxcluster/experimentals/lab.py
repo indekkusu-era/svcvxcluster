@@ -79,7 +79,6 @@ def thread_sv_cvx_cluster_saddle(A: np.ndarray, eps: float, C: float, graph: nx.
     normA = np.linalg.norm(A)
     j = 0
     dxx = np.zeros_like(X); dzz = np.zeros_like(Z)
-    last_iter = 0
     for iterations in (pbar := (tqdm(range(max_iter)) if verbose else range(max_iter))):
         threads = []
         with ThreadPoolExecutor(max_workers=None) as executor:
@@ -112,20 +111,21 @@ def thread_sv_cvx_cluster_saddle(A: np.ndarray, eps: float, C: float, graph: nx.
         # Check Optimality Condition
         if crit < tol:
             break
-        if np.sqrt(normgrad ** 2 + normgradZ ** 2) < mu_update_tol * (mu_update_tol_decay ** j) * min(1, np.sqrt(mu)) or iterations - last_iter >= 5:
-            if rho > 0.75:
-                mu *= gamma
-                mu = max(mu_min, mu)
-            elif rho < 0.25:
-                mu /= gamma
-                mu = min(mu_max, mu)
+        # TODO: Figure out why this helps convergence
+        if np.sqrt(normgrad ** 2 + normgradZ ** 2) < mu_update_tol * (mu_update_tol_decay ** j) * min(1, np.sqrt(mu)):
             j += 1
-            last_iter = iterations
             BX = X @ incidence_matrix
             prox_var = BX / mu + Z
             dual_prox = prox(prox_var, eps, C, 1 / mu)
             U = mu * (prox_var - dual_prox)
             BXDiff = BX - U
             Z += BXDiff / mu
+        # Using Trust Region to update
+        if rho > 1:
+            mu *= gamma
+            mu = max(mu_min, mu)
+        elif rho < 0:
+            mu /= gamma
+            mu = min(mu_max, mu)
     return X, Z
 
