@@ -8,4 +8,4 @@ def obj_dual(X, B, Z, A, eps, C, mu, **kwargs):
         normsqA = kwargs['normA'] ** 2
     else:
         normsqA = np.linalg.norm(A) ** 2
-    return - (0.5 * np.linalg.norm(X) ** 2 + eps * np.sum(np.abs(Z)) - normsqA * 0.5)
+    return - (0.5 * np.linalg.norm(Z @ B.T - A) ** 2 + eps * np.sum(np.abs(Z)) - normsqA * 0.5)

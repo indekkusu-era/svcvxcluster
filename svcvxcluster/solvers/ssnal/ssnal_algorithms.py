@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from ilupp import IChol0Preconditioner
 from scipy.sparse import identity as spI
+from scipy.sparse import diags
 from scipy.sparse import linalg as splinalg
 from .ssnal_utils import obj_function
 
@@ -36,7 +37,6 @@ def ssnal_cg(B, grad, mu, n, subgrad_P, X0=None, tol=1e-5, parallel=False, preco
             
             for task in threads:
                 task.result()
-        # raise NotImplementedError("Parallel Implementation is currently not supported")
 
     return dX
 
