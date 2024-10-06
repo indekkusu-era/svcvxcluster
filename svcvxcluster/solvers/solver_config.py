@@ -5,7 +5,7 @@ from ilupp import _BaseWrapper
 @dataclass(frozen=True)
 class SolverConfig:
     mu: float = 1
-    gamma: float = 0.5
+    gamma: float = 0.25
     tol: float = 1e-6 
     criterions: Iterable[Callable] = None
     armijo_alpha: float = 1
@@ -15,8 +15,8 @@ class SolverConfig:
     mu_update_tol: float = 1
     mu_update_tol_decay: float = 0.9
     max_iter: int = 1000
-    mu_min: float = 1e-5
-    mu_max: float = 1e5
+    mu_min: float = 1e-8
+    mu_max: float = 1e8
     cgtol_tau: float = 0.618
     cgtol_default: float = 1e-5
     parallel: bool = True

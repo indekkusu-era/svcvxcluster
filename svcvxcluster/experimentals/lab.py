@@ -14,6 +14,7 @@ from scipy.sparse import identity
 import scipy.sparse.linalg as splinalg
 from scipy.sparse import identity as spI
 from scipy.sparse import diags, csr_array
+from scipy.sparse.linalg import LinearOperator
 from ilupp import _BaseWrapper, IChol0Preconditioner
 from ..solvers.ssnal.ssnal_utils import ssnal_grad, prox, dprox
 from ..solvers.ssnal.ssnal_algorithms import armijo_line_search, armijo_dual, obj_function
@@ -25,13 +26,13 @@ def make_jinv(q: csr_array, tau: float, mu: float):
     j[q.nonzero()] = 1 / (tau * mu)
     return j
 
-def calculate_trust_region(X, B, Z, A, eps, C, mu, dZ):
+def calculate_trust_region(X, B, Z, A, eps, C, mu, dZ, dX):
     fx = -obj_dual(X, B, Z, A, eps, C, mu)
     fxp = -obj_dual(X, B, Z + dZ, A, eps, C, mu)
-    mp = -obj_function(X, A, Z, B, eps, C, mu)
+    mp = -obj_function(X + dX, A, Z + dZ, B, eps, C, mu)
     return (fx - fxp) / (fx - mp)
 
-def sv_cvxcluster_ssnal2_iter_1d(Ai, eps, C, incidence_matrix, Xi, Zi, mu, I, dX_cg, 
+def sv_cvxcluster_ssnal2_iter_1d(Ai, eps, C, incidence_matrix, Xi, Zi, mu, tau, I, dX_cg, 
                           cgtol_default, cgtol_tau, 
                           armijo_alpha, armijo_beta, armijo_sigma, armijo_iter):
     BX = Xi @ incidence_matrix
@@ -42,14 +43,15 @@ def sv_cvxcluster_ssnal2_iter_1d(Ai, eps, C, incidence_matrix, Xi, Zi, mu, I, dX
     gradX = ssnal_grad(Xi, Ai, incidence_matrix, dual_prox)
     Q = dprox(prox_var, eps, C, 1 / mu)
     # CG
-    BP = incidence_matrix * Q
-    sub_laplacian = BP @ BP.T
-    jinv = make_jinv(Q, 1, mu)
-    mat = I + sub_laplacian / mu + (BP.multiply(jinv)) @ BP.T
+    BP = incidence_matrix.multiply(Q)
+    jinv = make_jinv(Q, tau, mu)
+    PBJ = BP.multiply(jinv)
+    mat = I + BP @ BP.T / mu + PBJ @ BP.T
+    mprecond = IChol0Preconditioner(mat)
     normgrad = np.linalg.norm(gradX)
     cg_tol = min(cgtol_default, normgrad ** (1 + cgtol_tau))
-    dX, exit_code = splinalg.cg(mat, -(gradX + (BXDiff * jinv) * Q @ incidence_matrix.T).T, atol=cg_tol, x0=dX_cg, M=IChol0Preconditioner(mat))
-    dZ = jinv * ((dX @ incidence_matrix) * Q + BXDiff)
+    dX, exit_code = splinalg.cg(mat, - gradX - (BXDiff @ PBJ.T), atol=cg_tol, x0=dX_cg, M=mprecond)
+    dZ = jinv * (dX @ BP + BXDiff)
     alpha = armijo_line_search(Xi, Ai, Zi, incidence_matrix, eps, C, mu, gradX, dX,
                                 alpha0=armijo_alpha, beta=armijo_beta, sigma=armijo_sigma, max_iter=armijo_iter)
     beta = armijo_dual(Xi, Ai, Zi, incidence_matrix, eps, C, mu, BXDiff, dZ,
@@ -79,20 +81,22 @@ def thread_sv_cvx_cluster_saddle(A: np.ndarray, eps: float, C: float, graph: nx.
     normA = np.linalg.norm(A)
     j = 0
     dxx = np.zeros_like(X); dzz = np.zeros_like(Z)
+    last_iter = -1
+    tau = 1/9
     for iterations in (pbar := (tqdm(range(max_iter)) if verbose else range(max_iter))):
         threads = []
         with ThreadPoolExecutor(max_workers=None) as executor:
             for i in range(d):
                 threads.append(executor.submit(sv_cvxcluster_ssnal2_iter_1d, 
                                             A[i], eps, C, incidence_matrix, 
-                                            X[i], Z[i], mu, I, dX[i], 
+                                            X[i], Z[i], mu, tau, I, dX[i], 
                                             cgtol_default, cgtol_tau, armijo_alpha, 
                                             armijo_beta, armijo_sigma, armijo_iter)
                                         )
             
             for i, task in enumerate(threads):
                 dxx[i], dzz[i], dX[i] = task.result()
-        rho = calculate_trust_region(X, incidence_matrix, Z, A, eps, C, mu, dzz)
+        rho = calculate_trust_region(X, incidence_matrix, Z, A, eps, C, mu, dzz, dxx)
         X += dxx
         Z += dzz
         BX = X @ incidence_matrix
@@ -107,12 +111,13 @@ def thread_sv_cvx_cluster_saddle(A: np.ndarray, eps: float, C: float, graph: nx.
                                         BXDiff=BXDiff, normA=normA, normgradZ=normgradZ, 
                                         normU=np.linalg.norm(U), list_criterions=criterions))
         if verbose:
-            pbar.set_description(f"mu: {mu:.6f} | criterion: {crit:.6f} | tr: {rho:.6f}")
+            pbar.set_description(f"mu: {mu:.6f} | criterion: {crit:.6f} | tr: {rho:.6f} | tau: {tau:.6f}")
         # Check Optimality Condition
         if crit < tol:
             break
         # TODO: Figure out why this helps convergence
-        if np.sqrt(normgrad ** 2 + normgradZ ** 2) < mu_update_tol * (mu_update_tol_decay ** j) * min(1, np.sqrt(mu)):
+        if np.sqrt(normgrad ** 2 + normgradZ ** 2) < mu_update_tol * (mu_update_tol_decay ** j) * min(1, np.sqrt(mu)) or iterations - last_iter == 10:
+            last_iter = iterations - 1
             j += 1
             BX = X @ incidence_matrix
             prox_var = BX / mu + Z
@@ -121,11 +126,23 @@ def thread_sv_cvx_cluster_saddle(A: np.ndarray, eps: float, C: float, graph: nx.
             BXDiff = BX - U
             Z += BXDiff / mu
         # Using Trust Region to update
-        if rho > 1:
+        if rho > 0.75:
             mu *= gamma
             mu = max(mu_min, mu)
-        elif rho < 0:
+        elif rho < 0.25:
             mu /= gamma
             mu = min(mu_max, mu)
     return X, Z
 
+def zero_warmstart_thread(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0=None, Z0=None,
+                         mu=1, gamma=0.75, tol=1e-6, criterions=None, preconditioner='auto',
+                         armijo_alpha=1, armijo_sigma=0.25, armijo_beta=0.75, armijo_iter=10, 
+                         mu_update_tol=1, mu_update_tol_decay=0.95,
+                         max_iter=1000, mu_min=1e-5, mu_max=1e5, cgtol_tau=0.618, cgtol_default=1e-5, 
+                         parallel=True, verbose=True):
+    return thread_sv_cvx_cluster_saddle(A, 0, C, graph, X0, Z0,
+                         mu, gamma, tol, criterions, preconditioner,
+                         armijo_alpha, armijo_sigma, armijo_beta, armijo_iter, 
+                         mu_update_tol, mu_update_tol_decay,
+                         max_iter, mu_min, mu_max, cgtol_tau, cgtol_default, 
+                         parallel, verbose)
