@@ -1,13 +1,14 @@
 import numpy as np
 from scipy.sparse import csr_array, lil_array
+from ...criterions.gap import obj_dual
 
 def prox(X, eps, C, mu):
     return np.sign(X) * np.clip(np.abs(X) - mu * eps, 0, C)
 
 def dprox(X, eps, C, mu):
     xbar = np.abs(X) - mu * eps
-    return csr_array(((xbar >= 0) & (xbar <= C)).astype(int))
- 
+    return csr_array(((xbar >= 0) & (xbar <= C)), dtype=np.uint8)
+
 def ssnal_grad(X, A, B, prox):
     return X - A + prox @ B.T
 

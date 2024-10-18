@@ -8,21 +8,17 @@ import warnings
 
 import numpy as np
 import networkx as nx
-from typing import Literal, Union, Type
 from tqdm import tqdm
-from scipy.sparse import identity
 import scipy.sparse.linalg as splinalg
 from scipy.sparse import identity as spI
-from scipy.sparse import diags, csr_array
-from scipy.sparse.linalg import LinearOperator
-from ilupp import _BaseWrapper, IChol0Preconditioner
+from scipy.sparse import csr_array
 from ..solvers.ssnal.ssnal_utils import ssnal_grad, prox, dprox
 from ..solvers.ssnal.ssnal_algorithms import armijo_line_search, armijo_dual, obj_function
 from ..criterions import evaluate_criterions, primal_relative_kkt_residual, dual_relative_kkt_residual, kkt_relative_gap
 from ..criterions.gap import obj_dual
 
 def make_jinv(q: csr_array, tau: float, mu: float):
-    j = np.zeros(q.shape) + 1 / ((1 + tau) * mu)
+    j = np.ones(q.shape) / ((1 + tau) * mu)
     j[q.nonzero()] = 1 / (tau * mu)
     return j
 
@@ -45,13 +41,12 @@ def sv_cvxcluster_ssnal2_iter_1d(Ai, eps, C, incidence_matrix, Xi, Zi, mu, tau, 
     # CG
     BP = incidence_matrix.multiply(Q)
     jinv = make_jinv(Q, tau, mu)
-    PBJ = BP.multiply(jinv)
-    mat = I + BP @ BP.T / mu + PBJ @ BP.T
-    mprecond = IChol0Preconditioner(mat)
+    mat = I + (BP @ BP.T) / mu * (1 + 1 / tau) # + PBJ @ BP.T
     normgrad = np.linalg.norm(gradX)
     cg_tol = min(cgtol_default, normgrad ** (1 + cgtol_tau))
-    dX, exit_code = splinalg.cg(mat, - gradX - (BXDiff @ PBJ.T), atol=cg_tol, x0=dX_cg, M=mprecond)
-    dZ = jinv * (dX @ BP + BXDiff)
+    dX, exit_code = splinalg.cg(mat, - gradX - (BXDiff @ BP.T) / (tau * mu), atol=cg_tol, x0=dX_cg)
+    bdx = dX @ incidence_matrix
+    dZ = jinv * (bdx * Q + BXDiff)
     alpha = armijo_line_search(Xi, Ai, Zi, incidence_matrix, eps, C, mu, gradX, dX,
                                 alpha0=armijo_alpha, beta=armijo_beta, sigma=armijo_sigma, max_iter=armijo_iter)
     beta = armijo_dual(Xi, Ai, Zi, incidence_matrix, eps, C, mu, BXDiff, dZ,
@@ -82,13 +77,15 @@ def thread_sv_cvx_cluster_saddle(A: np.ndarray, eps: float, C: float, graph: nx.
     j = 0
     dxx = np.zeros_like(X); dzz = np.zeros_like(Z)
     last_iter = -1
-    tau = 1/9
+    last_iter_mu_update = 0
+    tau = 1 / 9
+    rho_old = 0.5
     for iterations in (pbar := (tqdm(range(max_iter)) if verbose else range(max_iter))):
         threads = []
         with ThreadPoolExecutor(max_workers=None) as executor:
             for i in range(d):
                 threads.append(executor.submit(sv_cvxcluster_ssnal2_iter_1d, 
-                                            A[i], eps, C, incidence_matrix, 
+                                            A[i], eps, C, incidence_matrix,
                                             X[i], Z[i], mu, tau, I, dX[i], 
                                             cgtol_default, cgtol_tau, armijo_alpha, 
                                             armijo_beta, armijo_sigma, armijo_iter)
@@ -126,12 +123,30 @@ def thread_sv_cvx_cluster_saddle(A: np.ndarray, eps: float, C: float, graph: nx.
             BXDiff = BX - U
             Z += BXDiff / mu
         # Using Trust Region to update
-        if rho > 0.75:
+        if iterations - last_iter_mu_update == 10:
+            last_iter_mu_update = iterations
+            if rho > 0.5:
+                mu *= gamma
+                mu = max(mu_min, mu)
+            if rho < 0.5:
+                mu /= gamma
+                mu = min(mu_max, mu)
+            continue
+        if rho > max(0.75, rho_old):
+            last_iter_mu_update = iterations
+            if rho_old <= 0.75:
+                tau = 1 / 9
             mu *= gamma
+            tau *= 0.75
             mu = max(mu_min, mu)
-        elif rho < 0.25:
+        elif rho < min(0.25, rho_old):
+            last_iter_mu_update = iterations
+            if rho_old >= 0.25:
+                tau = 1 / 9
             mu /= gamma
+            tau /= 0.75
             mu = min(mu_max, mu)
+        rho_old = rho
     return X, Z
 
 def zero_warmstart_thread(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0=None, Z0=None,

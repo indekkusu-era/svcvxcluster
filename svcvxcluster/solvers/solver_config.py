@@ -5,7 +5,7 @@ from ilupp import _BaseWrapper
 @dataclass(frozen=True)
 class SolverConfig:
     mu: float = 1
-    gamma: float = 0.25
+    gamma: float = 0.5
     tol: float = 1e-6 
     criterions: Iterable[Callable] = None
     armijo_alpha: float = 1
