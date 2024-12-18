@@ -2,7 +2,7 @@ import networkx as nx
 import numpy as np
 from dataclasses import asdict
 from typing import Union, Literal, Optional
-from .solvers import SGS_ADMM, Thread_SSNAL
+from .solvers import ADMM, thread_schur_2mm_tr
 from .solvers.solver_config import SolverConfig
 from .utils import nn_pairs, auto_select_params, build_nn_graph
 from .postprocessing import clusters, build_postprocessing_graph
@@ -11,7 +11,7 @@ class SvCvxCluster():
     def __init__(self, nn: Union[int, Literal['precomputed']], 
                  eps: float = None, C: float = None,
                  alpha: float = None, alpha_prime: float = None,
-                 solver_warm_start=SGS_ADMM, solver=Thread_SSNAL,
+                 solver_warm_start=ADMM, solver=thread_schur_2mm_tr,
                  warm_start_solver_config: Optional[SolverConfig] = None,
                  solver_config: Optional[SolverConfig] = None):
         assert not (eps is None or C is None) or not (alpha is None or alpha_prime is None), "you must specify either eps, C or alpha, alpha_prime. If you specify both, eps and C will be selected"
@@ -50,11 +50,14 @@ class SvCvxCluster():
         else:
             xbar0 = X0 if X0 is None else X0.copy()
             Z0 = Z0 if Z0 is None else Z0.copy()
-        xbar, Z = self._solver(self._X, self._eps, self._C, self._graph, 
+        solution = self._solver(self._X, self._eps, self._C, self._graph, 
                                X0=xbar0, Z0=Z0, 
                                **dict_solver_cfg)
-        self.Xbar_ = xbar.copy()
-        self.Z_ = Z.copy()
+        
+        self.Xbar_ = solution[0].copy()
+        self.Z_ = solution[1].copy()
+        if len(solution) > 2:
+            self.relative_residual = solution[2]
         self.post_processing_graph_ = build_postprocessing_graph(self.Xbar_, self.incidence_matrix, max(self._eps, 1e-4))
         self.labels()
         return self
@@ -73,7 +76,7 @@ class SvCvxCluster():
 class Norm1CvxCluster(SvCvxCluster):
     def __init__(self, 
                  nn: Union[int, Literal['precomputed']], gamma: float = None,
-                 solver_warm_start=SGS_ADMM, solver=Thread_SSNAL,
+                 solver_warm_start=ADMM, solver=thread_schur_2mm_tr,
                  warm_start_solver_config: Optional[SolverConfig] = None,
                  solver_config: Optional[SolverConfig] = None):
         super().__init__(nn, 0, gamma, solver_warm_start=solver_warm_start, 

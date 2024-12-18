@@ -14,29 +14,34 @@ from ...criterions import evaluate_criterions
 from ...criterions import primal_relative_kkt_residual, dual_relative_kkt_residual, kkt_relative_gap
 
 def sv_cvxcluster_iter_1d(Ai, eps, C, incidence_matrix, Xi, Zi, mu, I, dX_cg, 
-                          cgtol_default, cgtol_tau, 
+                          cgtol_default, cgtol_tau, tol, 
                           armijo_alpha, armijo_beta, armijo_sigma, armijo_iter):
-    BX = Xi @ incidence_matrix
+    X = Xi.copy()
+    for i in range(10):
+        BX = X @ incidence_matrix
+        prox_var = BX / mu + Zi
+        dual_prox = prox(prox_var, eps, C, 1 / mu)
+        U = mu * (prox_var - dual_prox)
+        gradX = ssnal_grad(X, Ai, incidence_matrix, dual_prox)
+        Q = dprox(prox_var, eps, C, 1 / mu)
+        # CG
+        BP = incidence_matrix * Q
+        sub_laplacian = BP @ BP.T
+        mat = I + sub_laplacian / mu
+        normgrad = np.linalg.norm(gradX)
+        if normgrad < tol:
+            break
+        cg_tol = min(cgtol_default, normgrad ** (1 + cgtol_tau))
+        dX, exit_code = splinalg.cg(mat, -gradX, atol=cg_tol, x0=dX_cg)
+        alpha = armijo_line_search(X, Ai, Zi, incidence_matrix, eps, C, mu, gradX, dX,
+                                    alpha0=armijo_alpha, beta=armijo_beta, sigma=armijo_sigma, max_iter=armijo_iter)
+        X += alpha * dX
+    BX = X @ incidence_matrix
     prox_var = BX / mu + Zi
     dual_prox = prox(prox_var, eps, C, 1 / mu)
     U = mu * (prox_var - dual_prox)
     BXDiff = BX - U
-    gradX = ssnal_grad(Xi, Ai, incidence_matrix, dual_prox)
-    Q = dprox(prox_var, eps, C, 1 / mu)
-    # CG
-    BP = incidence_matrix * Q
-    sub_laplacian = BP @ BP.T
-    mat = I + sub_laplacian / mu
-    normgrad = np.linalg.norm(gradX)
-    cg_tol = min(cgtol_default, normgrad ** (1 + cgtol_tau))
-    dX, exit_code = splinalg.cg(mat, -gradX, atol=cg_tol, x0=dX_cg, M=IChol0Preconditioner(mat))
-    Bdx = dX @ BP
-    dZ = (BXDiff + Bdx) / mu
-    alpha = armijo_line_search(Xi, Ai, Zi, incidence_matrix, eps, C, mu, gradX, dX,
-                                alpha0=armijo_alpha, beta=armijo_beta, sigma=armijo_sigma, max_iter=armijo_iter)
-    beta = armijo_dual(Xi, Ai, Zi, incidence_matrix, eps, C, mu, BXDiff, dZ,
-                                alpha0=armijo_alpha, beta=armijo_beta, sigma=armijo_sigma, max_iter=armijo_iter)
-    return Xi + dX * alpha, Zi + dZ * beta, dX
+    return X, Zi + BXDiff / mu
 
 
 def thread_sv_cvx_cluster(A: np.ndarray, eps: float, C: float, graph: nx.Graph, X0=None, Z0=None,
@@ -65,20 +70,24 @@ def thread_sv_cvx_cluster(A: np.ndarray, eps: float, C: float, graph: nx.Graph, 
     Z = Z0.copy()
     I = spI(n)
     normA = np.linalg.norm(A)
-    j = 0
-    for _ in (pbar := (tqdm(range(max_iter)) if verbose else range(max_iter))):
+    primal_update = 0
+    dual_update = 0
+    primal_residual_sequence = []
+    dual_residual_sequence = []
+    duality_gap_sequence = [] 
+    for iteration in (pbar := (tqdm(range(max_iter)) if verbose else range(max_iter))):
         threads = []
         with ThreadPoolExecutor(max_workers=None) as executor:
             for i in range(d):
                 threads.append(executor.submit(sv_cvxcluster_iter_1d, 
                                             A[i], eps, C, incidence_matrix, 
                                             X[i], Z[i], mu, I, dX[i], 
-                                            cgtol_default, cgtol_tau, armijo_alpha, 
+                                            cgtol_default, cgtol_tau, mu_update_tol * (mu_update_tol_decay ** iteration) * min(1, np.sqrt(mu)), armijo_alpha, 
                                             armijo_beta, armijo_sigma, armijo_iter)
                                         )
             
             for i, task in enumerate(threads):
-                X[i], Z[i], dX[i] = task.result()
+                X[i], Z[i] = task.result()
         BX = X @ incidence_matrix
         prox_var = BX / mu + Z
         dual_prox = prox(prox_var, eps, C, 1 / mu)
@@ -87,22 +96,30 @@ def thread_sv_cvx_cluster(A: np.ndarray, eps: float, C: float, graph: nx.Graph, 
         normgradZ = np.linalg.norm(BXDiff)
         gradX = ssnal_grad(X, A, incidence_matrix, dual_prox)
         normgrad = np.linalg.norm(gradX)
-        crit = max(evaluate_criterions(X, incidence_matrix, Z, A, eps, C, mu, U=U, 
+        primal_feas, dual_feas, ngap = evaluate_criterions(X, incidence_matrix, Z, A, eps, C, mu, U=U, 
                                         BXDiff=BXDiff, normA=normA, normgradZ=normgradZ, 
-                                        normU=np.linalg.norm(U), list_criterions=criterions))
+                                        normU=np.linalg.norm(U), list_criterions=criterions)
+        crit = max(primal_feas, dual_feas, ngap)
+        primal_residual_sequence.append(primal_feas)
+        dual_residual_sequence.append(dual_feas)
+        duality_gap_sequence.append(ngap)
         if verbose:
             pbar.set_description(f"mu: {mu:.6f} | criterion: {crit:.6f}")
         # Check Optimality Condition
         if crit < tol:
             break
-        if max(normgrad, normgradZ) < mu_update_tol * (mu_update_tol_decay ** j) * min(1, np.sqrt(mu)):
-            if normgrad < normgradZ:
-                mu *= gamma
-                mu = max(mu_min, mu)
-            else:
+        update = int(primal_relative_kkt_residual(X, incidence_matrix, mu, Z, eps, C, U, BXDiff) < dual_relative_kkt_residual(Z, C, A))
+        primal_update += update
+        dual_update += (1 - update)
+        if iteration % 5 == 4:
+            if primal_update > dual_update * 1.2:
                 mu /= gamma
                 mu = min(mu_max, mu)
-            j += 1
-    return X, Z
+                primal_update = 0
+            elif dual_update > primal_update * 1.2:
+                mu *= gamma
+                mu = max(mu_min, mu)
+                dual_update = 0
+    return X, Z, (primal_residual_sequence, dual_residual_sequence, duality_gap_sequence)
 
 
