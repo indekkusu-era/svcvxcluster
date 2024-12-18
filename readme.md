@@ -12,16 +12,18 @@ Supervisor: Asst. Prof. Ph. D. Chanun Lewchalermvongs
 Appeared in: 
 
 - Annual Pure and Applied Mathematics Conference 2024 at Chulalongkorn University
+- Senior Project @ B.Sc. Industrial Matematics and Data Science, Department of Mathematics, Faculty of Science, Mahidol University as **Convex Composite Optimization: A Review and Applications**
 
-This project is done as a partial fulfillment for Bachelor of Science in Industrial Mathematics and Data Science, Department of Mathematics, Faculty of Science, Mahidol University.
+Done as a partial fulfillment for Bachelor of Science in Industrial Mathematics and Data Science, Department of Mathematics, Faculty of Science, Mahidol University.
 
 ## PyPI
 
 TBA
 
-## Full Paper
+## Manuscript
 
-TBA
+- [Full Manuscript](https://drive.google.com/file/d/1CDFW2QdEqRHHLUwDilZBA4QKttDvT6UN/view?usp=sharing)
+- [Presentation Slides](https://drive.google.com/file/d/1Ys9kSbRhHLLnaAxMexB6AaaQ_PBgiws_/view?usp=sharing)
 
 ## Documentation
 
