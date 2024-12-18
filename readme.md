@@ -5,14 +5,14 @@ Author: Tanaphoom Glinpatgij
 - email: tanaphoom.gli@student.mahidol.edu
 - github email: lkycst@gmail.com (this account)
 
-Supervisor: Asst. Prof. Ph. D. Chanun Lewchalermvongs
+Advisor: Asst. Prof. Ph. D. Chanun Lewchalermvongs
 
 - email: chanun.lew@mahidol.edu
 
 Appeared in: 
 
-- Annual Pure and Applied Mathematics Conference 2024 at Chulalongkorn University
-- Senior Project @ B.Sc. Industrial Matematics and Data Science, Department of Mathematics, Faculty of Science, Mahidol University as **Convex Composite Optimization: A Review and Applications**
+- Annual Pure and Applied Mathematics Conference 2024 at Chulalongkorn University as **Support-vector-based Sum-of-Norms Clustering**.
+- Senior Project @ B.Sc. Industrial Matematics and Data Science, Department of Mathematics, Faculty of Science, Mahidol University as **Convex Composite Optimization: A Review and Applications**.
 
 Done as a partial fulfillment for Bachelor of Science in Industrial Mathematics and Data Science, Department of Mathematics, Faculty of Science, Mahidol University.
 
