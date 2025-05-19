@@ -40,7 +40,10 @@ def sv_cvxcluster_ssnal2_iter_1d(Ai, eps, C, incidence_matrix, Xi, Zi, mu, tau, 
     mat = I + (BP @ BP.T) / mu * (1 + 1 / tau) # + PBJ @ BP.T
     normgrad = np.linalg.norm(gradX)
     cg_tol = min(cgtol_default, normgrad ** (1 + cgtol_tau))
-    dX, exit_code = splinalg.cg(mat, - gradX - (BXDiff @ BP.T) / (tau * mu), atol=cg_tol, x0=dX_cg)
+    inv_diag = 1 / mat.diagonal()
+    one_onet = 1 / mat.sum()
+    prec = splinalg.LinearOperator(dtype=np.float64, shape=mat.shape, matvec=lambda x: x * inv_diag + np.sum(x) * one_onet)
+    dX, exit_code = splinalg.cg(mat, - gradX - (BXDiff @ BP.T) / (tau * mu), atol=cg_tol, x0=dX_cg, M=prec)
     bdx = dX @ incidence_matrix
     dZ = jinv * (bdx * Q + BXDiff)
     alpha = armijo_line_search(Xi, Ai, Zi, incidence_matrix, eps, C, mu, gradX, dX,
