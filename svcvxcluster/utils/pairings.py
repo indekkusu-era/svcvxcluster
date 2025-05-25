@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 def nn_pairs(A: np.ndarray, nn: int, batch_size=None):
     inp = A.T
     if batch_size is None:
-        batch_size = min(10000, inp.shape[0] // 100)
+        batch_size = min(10000, inp.shape[0] // 100 + 1)
     tree = KDTree(inp, metric='chebyshev')
     threads = []
     nns = np.zeros((inp.shape[0], nn), dtype=int)
